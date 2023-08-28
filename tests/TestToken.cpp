@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "Lex.hpp"
+#include "Reader.hpp"
 
 void check_token(const Token &token, Token::Type type,
                  const std::string &value = "") {

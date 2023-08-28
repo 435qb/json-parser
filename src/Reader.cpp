@@ -1,4 +1,5 @@
-#include "Lex.hpp"
+#include "Reader.hpp"
+#include "json.hpp"
 #include <charconv>
 #include <cmath>
 #include <stdexcept>
@@ -324,4 +325,104 @@ std::vector<Token> Lexer::dump_tokens() {
         tokens.emplace_back(std::move(token));
     }
     return tokens;
+}
+
+Json Parser::parse() {
+    auto json = parse_value();
+    if (curr_->type != Token::Type::EOF_) {
+        error("End of file expected");
+    }
+    return json;
+}
+// NOLINTBEGIN(*-no-recursion)
+Json Parser::parse_value() {
+    // curr != tokens_.end()
+
+    switch (curr_->type) {
+    case Token::Type::EOF_:
+    case Token::Type::END_ARRAY:
+    case Token::Type::END_OBJECT:
+    case Token::Type::NAME_SEPARATOR:
+    case Token::Type::VALUE_SEPARATOR:
+        error("Value expected");
+    case Token::Type::BEGIN_ARRAY:
+        return parse_array();
+    case Token::Type::BEGIN_OBJECT:
+        return parse_object();
+    case Token::Type::FALSE:
+        next();
+        return Json(false);
+    case Token::Type::TRUE:
+        next();
+        return Json(true);
+    case Token::Type::NULL_:
+        next();
+        return Json(Null{});
+    case Token::Type::NUMBER: {
+        auto json = Json(std::get<double>(curr_->value));
+        next();
+        return json;
+    }
+    case Token::Type::STRING: {
+        auto json = Json(std::get<double>(curr_->value));
+        next();
+        return json;
+    }
+    }
+    unreachable();
+}
+
+Json Parser::parse_array() {
+    // curr != tokens_.end()
+    Json json(ArrayType{});
+    if ((curr_ + 1)->type == Token::Type::END_ARRAY) {
+        next(2);
+        return json;
+    }
+    do {
+        next();
+        json.append(parse_value());
+    } while (curr_->type == Token::Type::VALUE_SEPARATOR);
+    if (curr_->type == Token::Type::END_ARRAY) {
+        next();
+        return json;
+    }
+    error("Expected comma or closing bracket");
+}
+Json Parser::parse_object() {
+    Json json(ObjectType{});
+    if ((curr_ + 1)->type == Token::Type::END_OBJECT) {
+        next(2);
+        return json;
+    }
+    do {
+        next();
+        if (curr_->type == Token::Type::STRING) {
+            auto index = std::get<std::string>(curr_->value);
+            if (json.contains(index)) {
+                error("Duplicate object key");
+            }
+            next();
+            if (curr_->type == Token::Type::NAME_SEPARATOR) {
+                next();
+                json[index] = parse_value();
+            } else {
+                error("Colon expected");
+            }
+        } else {
+            error("Property expected");
+        }
+    } while (curr_->type == Token::Type::VALUE_SEPARATOR);
+    if (curr_->type == Token::Type::END_OBJECT) {
+        next();
+        return json;
+    }
+    error("Expected comma or closing bracket");
+}
+// NOLINTEND(*-no-recursion)
+
+void Parser::error(const char *messgae) const {
+    std::string message_ = std::to_string(curr_->lineno) + ":" +
+                           std::to_string(curr_->col_offset) + ": " + messgae;
+    throw std::runtime_error(message_);
 }

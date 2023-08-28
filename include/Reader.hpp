@@ -1,5 +1,6 @@
-#ifndef LEX_HPP
-#define LEX_HPP
+#ifndef READER_HPP
+#define READER_HPP
+#include "json.hpp"
 #include <string>
 #include <variant>
 #include <vector>
@@ -60,4 +61,18 @@ struct Lexer {
     }
 };
 
-#endif // LEX_HPP
+struct Parser {
+    const std::vector<Token> &tokens_; // not empty, always has EOF
+    std::vector<Token>::const_iterator curr_;
+    explicit Parser(const std::vector<Token> &tokens)
+        : tokens_(tokens), curr_(tokens_.begin()) {}
+    Json parse();
+    Json parse_value();
+    Json parse_object();
+    Json parse_array();
+    [[noreturn]] void error(const char *messgae) const;
+    void inline next(int step = 1){
+        curr_ += step;
+    }
+};
+#endif // READER_HPP

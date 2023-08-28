@@ -11,7 +11,7 @@ target("json-parser")
 
 target("test")
     add_files("tests/*.cpp")
-    add_files("src/Lex.cpp")
+    add_files("src/Reader.cpp")
     add_packages("gtest")
 
 --
