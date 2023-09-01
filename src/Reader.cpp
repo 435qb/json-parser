@@ -1,5 +1,6 @@
 #include "Reader.hpp"
 #include "json.hpp"
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <stdexcept>
@@ -228,6 +229,14 @@ Token Lexer::get_string() { // NOLINT
     error("Unexpected end of string.");
 }
 Token Lexer::get_number() { // NOLINT
+    if (match("0")) {
+        next();
+        return generate_token(Token::Type::NUMBER, 0);
+    }
+    if (match("-0")) {
+        next(2);
+        return generate_token(Token::Type::NUMBER, -0.0);
+    }
     double retn{};
     auto result =
         from_chars(curr_pos, data_.end(), retn,
@@ -236,6 +245,10 @@ Token Lexer::get_number() { // NOLINT
         error("invalid float string");
     } else if (result.ec == std::errc::result_out_of_range) {
         error("result out of range");
+    }
+    const auto *iter = std::find(curr_pos, result.ptr, '.');
+    if (iter != result.ptr && (iter[1] < '0' || iter[1] > '9')) {
+        error("Unexpected end of number");
     }
     curr_pos = result.ptr;
     return generate_token(Token::Type::NUMBER, retn);

@@ -104,11 +104,18 @@ TEST(TokenTest, exceptions) {
         EXPECT_ANY_THROW({ lexer.get_next_token(); });
     }
     {
-        Lexer lexer(R"(1.1e)");
+        Lexer lexer(R"(1.e001)");
         EXPECT_ANY_THROW({ lexer.get_next_token(); });
     }
     {
+        Lexer lexer(R"(1.1e)");
+        lexer.get_next_token();
+        EXPECT_ANY_THROW({ lexer.get_next_token(); });
+    }
+
+    {
         Lexer lexer(R"(1e[])");
+        lexer.get_next_token();
         EXPECT_ANY_THROW({ lexer.get_next_token(); });
     }
 }
