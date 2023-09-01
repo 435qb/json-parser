@@ -1,4 +1,5 @@
 #include "json.hpp"
+#include <charconv>
 #include <sstream>
 
 template <> Json::Json(ArrayType /**/) : data(std::in_place_type<arraytype>) {}
@@ -61,7 +62,15 @@ std::string Json::dump(int size, size_t level) const {
         return std::to_string(std::get<bool>(data));
     }
     if (std::holds_alternative<double>(data)) {
-        return std::to_string(std::get<double>(data));
+        std::string s(255,'\0');
+        auto number = std::get<double>(data);
+        auto p = std::to_chars(s.begin().base(), s.end().base(), number, std::chars_format::scientific);
+        if (p.ec == std::errc::value_too_large)[[unlikely]]{
+            return std::to_string(number);
+        }
+        s.resize(p.ptr - s.begin().base());
+        s.shrink_to_fit();
+        return s;
     }
     if (std::holds_alternative<std::string>(data)) {
         return std::get<std::string>(data);

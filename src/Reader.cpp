@@ -4,6 +4,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <unicode/unistr.h>
 #include <utility>
@@ -227,71 +228,17 @@ Token Lexer::get_string() { // NOLINT
     error("Unexpected end of string.");
 }
 Token Lexer::get_number() { // NOLINT
-    bool neg = false;
-    if (*curr_pos == '-') {
-        neg = true;
-        next();
-        if (curr_pos == data_.end()) {
-            error("Value expected");
-        }
+    double retn{};
+    auto result =
+        from_chars(curr_pos, data_.end(), retn,
+                   std::chars_format::general | std::chars_format::hex);
+    if (result.ec == std::errc::invalid_argument) {
+        error("invalid float string");
+    } else if (result.ec == std::errc::result_out_of_range) {
+        error("result out of range");
     }
-    if (*curr_pos == '0') {
-        next();
-        return generate_token(Token::Type::NUMBER, 0);
-    }
-    double number{};
-    while (curr_pos != data_.end() && *curr_pos >= '0' && *curr_pos <= '9') {
-        number = number * 10 + *curr_pos - '0';
-        next();
-    }
-    if (number == 0) {
-        error("Expected number");
-    }
-    if (curr_pos == data_.end()) {
-        return generate_token(Token::Type::NUMBER, number);
-    }
-    if (*curr_pos == '.') {
-        next();
-        double k = 10;
-        while (curr_pos != data_.end() && *curr_pos >= '0' &&
-               *curr_pos <= '9') {
-            number += (*curr_pos - '0') / k;
-            k *= 10;
-            next();
-        }
-        if (k == 10) {
-            error("Expected at least one frac");
-        }
-        if (curr_pos == data_.end()) {
-            return generate_token(Token::Type::NUMBER, number);
-        }
-    }
-    number = (neg ? -number : number);
-    if (*curr_pos == 'e') {
-        next();
-        if (curr_pos == data_.end()) {
-            error("Unexpected end of number");
-        }
-        bool expo_neg = false;
-        if (*curr_pos == '-') {
-            expo_neg = true;
-            next();
-        } else if (*curr_pos == '+') {
-            next();
-        }
-        int expo = 0;
-        while (curr_pos != data_.end() && *curr_pos >= '0' &&
-               *curr_pos <= '9') {
-            expo = expo * 10 + (*curr_pos - '0');
-            next();
-        }
-        if (expo == 0) {
-            error("Unexpected end of number");
-        }
-        expo = (expo_neg ? -1 : 1) * expo;
-        number *= pow(10, expo);
-    }
-    return generate_token(Token::Type::NUMBER, number);
+    curr_pos = result.ptr;
+    return generate_token(Token::Type::NUMBER, retn);
 }
 void Lexer::error(const char *messgae) const {
     std::string message_ =
@@ -379,7 +326,7 @@ Json Parser::parse_array() {
         next(2);
         return json;
     }
-    do {
+    do { // NOLINT
         next();
         json.append(parse_value());
     } while (curr_->type == Token::Type::VALUE_SEPARATOR);
@@ -395,7 +342,7 @@ Json Parser::parse_object() {
         next(2);
         return json;
     }
-    do {
+    do { // NOLINT
         next();
         if (curr_->type == Token::Type::STRING) {
             auto index = std::get<std::string>(curr_->value);
