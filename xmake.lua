@@ -2,12 +2,12 @@ add_rules("mode.debug", "mode.release")
 add_requires("gtest")
 add_includedirs("include")
 add_languages("c++20")
-add_ldflags("$(shell pkg-config --libs --cflags icu-uc icu-io)")
+-- add_ldflags("$(shell pkg-config --libs --cflags icu-uc icu-io)")
 
 target("json-parser")
     set_kind("binary")
     add_files("src/*.cpp")
-
+    
 
 target("test")
     add_files("tests/*.cpp")

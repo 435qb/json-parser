@@ -7,7 +7,6 @@
 #include <string>
 #include <system_error>
 #include <type_traits>
-#include <unicode/unistr.h>
 #include <utility>
 #include <variant>
 
@@ -147,6 +146,8 @@ Token Lexer::get_string() { // NOLINT
     std::string s;
     while (curr_pos != data_.end()) {
         switch (*curr_pos) {
+        case '\0'... '\x19':
+            error("Unexpected character after `\\`.");
         case '\x5C': /* \ */
             next();
             if (curr_pos == data_.end()) {
@@ -185,8 +186,7 @@ Token Lexer::get_string() { // NOLINT
                 if (result.ptr != curr_pos + 4) {
                     error("Invalid unicode sequence in string.");
                 }
-                auto ch = static_cast<UChar32>(value);
-                if (value >= 0xD800 && value < 0xDC00) {
+                if (value >= 0xD800U && value < 0xDC00U) {
                     next(4);
                     if (!match("\\u")) {
                         error("Invalid unicode sequence in string.");
@@ -204,13 +204,46 @@ Token Lexer::get_string() { // NOLINT
                     if (nextvalue < 0xDC00 || nextvalue >= 0xE000) {
                         error("Invalid unicode sequence in string.");
                     }
-                    ch = static_cast<UChar32>(0x10000 +
-                                              ((value - 0xD800) << 10) +
-                                              (nextvalue - 0xDC00));
+                    value = (0x10000 + ((value - 0xD800) << 10) +
+                             (nextvalue - 0xDC00));
                 }
                 next(3); // will be nexted after switch
-                icu::UnicodeString{ch}.toUTF8String(s);
+                // icu::UnicodeString{ch}.toUTF8String(s);
+                char str[5]{};
+                auto *p = reinterpret_cast<unsigned char *>(str); // NOLINT
+                if (value < 0x0080U) {
+                    s.push_back(static_cast<char>(value)); // for value == 0
+                } else if (value < 0x0800U) {
+                    auto second = value & 0b111111U;
+                    value >>= 6;
+                    auto first = value;
+                    p[0] = first + 0b110'00000;
+                    p[1] = second + 0b10'000000;
+                } else if (value < 0x10000U) {
+                    auto third = value & 0b111111U;
+                    value >>= 6;
+                    auto second = value & 0b111111U;
+                    value >>= 6;
+                    auto first = value;
 
+                    p[0] = first + 0b1110'0000;
+                    p[1] = second + 0b10'000000;
+                    p[2] = third + 0b10'000000;
+                } else {
+                    auto fourth = value & 0b111111U;
+                    value >>= 6;
+                    auto third = value & 0b111111U;
+                    value >>= 6;
+                    auto second = value & 0b111111U;
+                    value >>= 6;
+                    auto first = value & 0b111U; // avoid error
+
+                    p[0] = first + 0b11110'000;
+                    p[1] = second + 0b10'000000;
+                    p[2] = third + 0b10'000000;
+                    p[3] = fourth + 0b10'000000;
+                }
+                s.append(str); // NOLINT
                 break;
             }
             default:
@@ -229,11 +262,11 @@ Token Lexer::get_string() { // NOLINT
     error("Unexpected end of string.");
 }
 Token Lexer::get_number() { // NOLINT
-    if (match("0")) {
+    if (match("0") && !match("0.") && !match("0e")) {
         next();
         return generate_token(Token::Type::NUMBER, 0);
     }
-    if (match("-0")) {
+    if (match("-0") && !match("-0.") && !match("-0e")) {
         next(2);
         return generate_token(Token::Type::NUMBER, -0.0);
     }
@@ -324,7 +357,7 @@ Json Parser::parse_value() {
         return json;
     }
     case Token::Type::STRING: {
-        auto json = Json(std::get<double>(curr_->value));
+        auto json = Json(std::get<std::string>(curr_->value));
         next();
         return json;
     }

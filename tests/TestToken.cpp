@@ -13,8 +13,8 @@ void check_token(const Token &token, Token::Type type, double value) {
 }
 // NOLINTBEGIN
 TEST(TokenTest, unicode) {
-    Lexer lexer(R"("\uD83E\uDD70")");
-    check_token(lexer.get_next_token(), Token::Type::STRING, "🥰");
+    Lexer lexer(R"("\uD83E\uDD70\u0024\u00A3\u0418\u0939\u20AC\uD55C")");
+    check_token(lexer.get_next_token(), Token::Type::STRING, "🥰$£Иह€한");
     check_token(lexer.get_next_token(), Token::Type::EOF_);
 }
 TEST(TokenTest, literals) {
@@ -41,12 +41,19 @@ TEST(TokenTest, strings) {
     check_token(lexer.get_next_token(), Token::Type::EOF_);
 }
 TEST(TokenTest, numbers) {
-    Lexer lexer(R"(010.23,-10.23e-1)");
-    check_token(lexer.get_next_token(), Token::Type::NUMBER, 0);
-    check_token(lexer.get_next_token(), Token::Type::NUMBER, 10.23);
-    check_token(lexer.get_next_token(), Token::Type::VALUE_SEPARATOR);
-    check_token(lexer.get_next_token(), Token::Type::NUMBER, -10.23e-1);
-    check_token(lexer.get_next_token(), Token::Type::EOF_);
+    {
+        Lexer lexer(R"(010.23,-10.23e-1)");
+        check_token(lexer.get_next_token(), Token::Type::NUMBER, 0);
+        check_token(lexer.get_next_token(), Token::Type::NUMBER, 10.23);
+        check_token(lexer.get_next_token(), Token::Type::VALUE_SEPARATOR);
+        check_token(lexer.get_next_token(), Token::Type::NUMBER, -10.23e-1);
+        check_token(lexer.get_next_token(), Token::Type::EOF_);
+    }
+    {
+        Lexer lexer(R"(0.087)");
+        check_token(lexer.get_next_token(), Token::Type::NUMBER, 0.087);
+        check_token(lexer.get_next_token(), Token::Type::EOF_);
+    }
 }
 TEST(TokenTest, exceptions) {
     {

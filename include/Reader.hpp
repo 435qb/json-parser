@@ -21,7 +21,7 @@ struct Token {
         NUMBER,
         STRING
     } type;
-    std::variant<std::string, double> value;
+    std::variant<std::string, double> value{};
 
     std::string get_type() const;
     std::string get_value() const;
