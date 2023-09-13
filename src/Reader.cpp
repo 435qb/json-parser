@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <future>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -146,7 +148,7 @@ Token Lexer::get_string() { // NOLINT
     std::string s;
     while (curr_pos != data_.end()) {
         switch (*curr_pos) {
-        case '\0'... '\x19':
+        case '\0' ... '\x19':
             error("Unexpected character after `\\`.");
         case '\x5C': /* \ */
             next();
@@ -322,7 +324,7 @@ std::vector<Token> Lexer::dump_tokens() {
 
 Json Parser::parse() {
     auto json = parse_value();
-    if (curr_->type != Token::Type::EOF_) {
+    if (curr()->type != Token::Type::EOF_) {
         error("End of file expected");
     }
     return json;
@@ -331,7 +333,7 @@ Json Parser::parse() {
 Json Parser::parse_value() {
     // curr != tokens_.end()
 
-    switch (curr_->type) {
+    switch (curr()->type) {
     case Token::Type::EOF_:
     case Token::Type::END_ARRAY:
     case Token::Type::END_OBJECT:
@@ -352,12 +354,12 @@ Json Parser::parse_value() {
         next();
         return Json(Null{});
     case Token::Type::NUMBER: {
-        auto json = Json(std::get<double>(curr_->value));
+        auto json = Json(std::get<double>(curr()->value));
         next();
         return json;
     }
     case Token::Type::STRING: {
-        auto json = Json(std::get<std::string>(curr_->value));
+        auto json = Json(std::get<std::string>(curr()->value));
         next();
         return json;
     }
@@ -368,15 +370,15 @@ Json Parser::parse_value() {
 Json Parser::parse_array() {
     // curr != tokens_.end()
     Json json(ArrayType{});
-    if ((curr_ + 1)->type == Token::Type::END_ARRAY) {
+    if (curr(1)->type == Token::Type::END_ARRAY) {
         next(2);
         return json;
     }
     do { // NOLINT
         next();
         json.append(parse_value());
-    } while (curr_->type == Token::Type::VALUE_SEPARATOR);
-    if (curr_->type == Token::Type::END_ARRAY) {
+    } while (curr()->type == Token::Type::VALUE_SEPARATOR);
+    if (curr()->type == Token::Type::END_ARRAY) {
         next();
         return json;
     }
@@ -384,19 +386,19 @@ Json Parser::parse_array() {
 }
 Json Parser::parse_object() {
     Json json(ObjectType{});
-    if ((curr_ + 1)->type == Token::Type::END_OBJECT) {
+    if (curr(1)->type == Token::Type::END_OBJECT) {
         next(2);
         return json;
     }
     do { // NOLINT
         next();
-        if (curr_->type == Token::Type::STRING) {
-            auto index = std::get<std::string>(curr_->value);
+        if (curr()->type == Token::Type::STRING) {
+            auto index = std::get<std::string>(curr()->value);
             if (json.contains(index)) {
                 error("Duplicate object key");
             }
             next();
-            if (curr_->type == Token::Type::NAME_SEPARATOR) {
+            if (curr()->type == Token::Type::NAME_SEPARATOR) {
                 next();
                 json[index] = parse_value();
             } else {
@@ -405,8 +407,8 @@ Json Parser::parse_object() {
         } else {
             error("Property expected");
         }
-    } while (curr_->type == Token::Type::VALUE_SEPARATOR);
-    if (curr_->type == Token::Type::END_OBJECT) {
+    } while (curr()->type == Token::Type::VALUE_SEPARATOR);
+    if (curr()->type == Token::Type::END_OBJECT) {
         next();
         return json;
     }
@@ -415,7 +417,53 @@ Json Parser::parse_object() {
 // NOLINTEND(*-no-recursion)
 
 void Parser::error(const char *messgae) const {
-    std::string message_ = std::to_string(curr_->lineno) + ":" +
-                           std::to_string(curr_->col_offset) + ": " + messgae;
+    std::string message_ = std::to_string(curr()->lineno) + ":" +
+                           std::to_string(curr()->col_offset) + ": " + messgae;
     throw std::runtime_error(message_);
+}
+
+Json threaded_parse(std::string_view data) {
+    Lexer lexer(data);
+    Parser parser;
+    std::promise<void> p;
+    std::future<void> f = p.get_future();
+    std::thread worker([&]() {
+        try {
+            bool finish = false;
+            while (!finish) {
+                auto token = lexer.get_next_token();
+                if (token.type == Token::Type::EOF_) {
+                    finish = true;
+                }
+                parser.push(std::move(token));
+            }
+        } catch (...) {
+            parser.stop = true;
+            parser.cv.notify_all();
+            try {
+                // 存储任何抛出的异常于 promise
+                p.set_exception(std::current_exception());
+            } catch(...) {} // set_exception() 亦可能抛出
+        }
+    });
+    Json value;
+    std::thread consumer([&]() {
+        try {
+            value = parser.parse();
+            p.set_value();
+        } catch (...) {
+            try {
+                // 存储任何抛出的异常于 promise
+                if(!parser.stop){
+                    p.set_exception(std::current_exception());
+                }
+            } catch(...) {} // set_exception() 亦可能抛出
+        }
+    });
+    consumer.join();
+    worker.join();
+
+    f.get();
+
+    return value;
 }

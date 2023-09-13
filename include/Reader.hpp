@@ -1,6 +1,10 @@
 #ifndef READER_HPP
 #define READER_HPP
 #include "json.hpp"
+#include <condition_variable>
+#include <deque>
+#include <exception>
+#include <mutex>
 #include <string>
 #include <variant>
 #include <vector>
@@ -62,17 +66,41 @@ struct Lexer {
 };
 
 struct Parser {
-    const std::vector<Token> &tokens_; // not empty, always has EOF
-    std::vector<Token>::const_iterator curr_;
-    explicit Parser(const std::vector<Token> &tokens)
-        : tokens_(tokens), curr_(tokens_.begin()) {}
+    mutable std::mutex m;
+    mutable std::condition_variable cv;
+    std::deque<Token> tokens;
+    bool stop = false;
+    std::deque<Token>::const_iterator curr(int k = 0) const{
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait(lk, [this, k](){return stop || tokens.size() > k;});
+        if(stop){
+            throw 0;
+        }
+        return tokens.cbegin() + k;
+    }
+    Parser() = default;
+
     Json parse();
     Json parse_value();
     Json parse_object();
     Json parse_array();
     [[noreturn]] void error(const char *messgae) const;
     void inline next(int step = 1){
-        curr_ += step;
+        while(step--){
+            std::unique_lock<std::mutex> lk(m);
+            cv.wait(lk, [this](){return stop || !tokens.empty();});
+            if(stop){
+                throw 0;
+            }
+            tokens.pop_front();
+        }
+    }
+    void push(Token token){
+        std::unique_lock<std::mutex> lk(m);
+        tokens.emplace_back(std::move(token));
+        cv.notify_one();
     }
 };
+
+Json threaded_parse(std::string_view data);
 #endif // READER_HPP
